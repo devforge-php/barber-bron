@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\NotifactionResource;
 use App\Models\Notification;
+use App\Models\Service;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class BarberWorksController extends Controller
 {
@@ -62,10 +64,12 @@ class BarberWorksController extends Controller
     ]);
 }
 
+
+
 public function barberserviceday(Request $request)
 {
     $request->validate([
-        'date' => 'required|date', // misol: 2025-05-31
+        'date' => 'required|date',
     ]);
 
     $date = $request->input('date');
@@ -74,8 +78,37 @@ public function barberserviceday(Request $request)
         ->whereDate(DB::raw("JSON_UNQUOTE(JSON_EXTRACT(data, '$.booking_time'))"), $date)
         ->get();
 
-    return NotifactionResource::collection($notifications);
+    $notifications->transform(function ($notification) {
+        $data = is_string($notification->data) ? json_decode($notification->data, true) : $notification->data;
+
+        if (isset($data['booking_time']) && isset($data['services']) && is_array($data['services'])) {
+            $start = Carbon::parse($data['booking_time']);
+
+            $totalMinutes = 0;
+
+            foreach ($data['services'] as $serviceData) {
+                $service = Service::find($serviceData['id']);
+                if ($service) {
+                    // 'minut' string bo'lishi mumkin, int ga aylantirish zarur
+                    $totalMinutes += (int)$service->minut;
+                }
+            }
+
+            $end = $start->copy()->addMinutes($totalMinutes);
+            $data['end_time'] = $end->format('Y-m-d H:i');
+        } else {
+            $data['end_time'] = null;
+        }
+
+        $notification->data = $data;
+
+        return $notification;
+    });
+
+    return response()->json(['data' => $notifications]);
 }
+
+
 
 
 
